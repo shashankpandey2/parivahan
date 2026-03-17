@@ -1,0 +1,823 @@
+openapi: 3.0.3
+
+info:
+  title: Parivahan — Multi-Region Ride-Hailing Platform
+  version: "1.0"
+  description: >
+    REST APIs for the Parivahan ride-hailing platform.
+    All mutating requests require an `Idempotency-Key` header.
+    All timestamps are ISO 8601 / UTC.
+
+servers:
+  - url: https://api.parivahan.in/v1
+
+# ────────────────────────────────────────────────────────────────────────────
+# Security
+# ────────────────────────────────────────────────────────────────────────────
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Client-generated UUID; prevents duplicate operations on retry.
+
+  schemas:
+
+    # ── Common ──────────────────────────────────────────────────────────────
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:    { type: string }
+            message: { type: string }
+
+    GeoPoint:
+      type: object
+      required: [lat, lon]
+      properties:
+        lat:     { type: number, format: double, example: 12.9716 }
+        lon:     { type: number, format: double, example: 77.5946 }
+        address: { type: string, example: "MG Road, Bengaluru" }
+
+    FareBreakdown:
+      type: object
+      properties:
+        base:            { type: number, example: 20.00 }
+        distanceCharge:  { type: number, example: 100.80 }
+        timeCharge:      { type: number, example: 25.50 }
+        waitCharge:      { type: number, example: 1.50 }
+        surgeMultiplier: { type: number, example: 1.3 }
+        subtotal:        { type: number, example: 147.80 }
+        total:           { type: number, example: 192.00 }
+        currency:        { type: string, example: "INR" }
+
+    # ── Ride ────────────────────────────────────────────────────────────────
+
+    CreateRideRequest:
+      type: object
+      required: [pickup, destination, tier, paymentMethod]
+      properties:
+        pickup:
+          $ref: '#/components/schemas/GeoPoint'
+        destination:
+          $ref: '#/components/schemas/GeoPoint'
+        tier:
+          type: string
+          enum: [AUTO, STANDARD, PREMIUM]
+        paymentMethod:
+          type: string
+          enum: [UPI, CARD, CASH, WALLET]
+
+    CreateRideResponse:
+      type: object
+      properties:
+        rideId:          { type: string, example: "ride_01HZ..." }
+        status:          { type: string, example: "REQUESTED" }
+        surgeMultiplier: { type: number, example: 1.3 }
+        estimatedFare:
+          type: object
+          properties:
+            min:      { type: number, example: 95.00 }
+            max:      { type: number, example: 110.00 }
+            currency: { type: string, example: "INR" }
+        createdAt: { type: string, format: date-time }
+
+    RideStatusResponse:
+      type: object
+      properties:
+        rideId:  { type: string }
+        status:
+          type: string
+          enum: [REQUESTED, MATCHED, IN_PROGRESS, PAUSED, COMPLETED, CANCELLED, NO_DRIVER]
+        driver:
+          type: object
+          properties:
+            driverId:      { type: string }
+            name:          { type: string }
+            rating:        { type: number }
+            vehicleNumber: { type: string }
+            etaMinutes:    { type: integer }
+        updatedAt: { type: string, format: date-time }
+
+    CancelRideResponse:
+      type: object
+      properties:
+        rideId:          { type: string }
+        status:          { type: string, example: "CANCELLED" }
+        cancellationFee: { type: number, example: 0.00 }
+        currency:        { type: string, example: "INR" }
+
+    # ── Trip ────────────────────────────────────────────────────────────────
+
+    TripStatusResponse:
+      type: object
+      properties:
+        tripId:          { type: string }
+        rideId:          { type: string }
+        status:
+          type: string
+          enum: [MATCHED, IN_PROGRESS, PAUSED, COMPLETED, CANCELLED]
+        tier:            { type: string, enum: [AUTO, STANDARD, PREMIUM] }
+        surgeMultiplier: { type: number }
+        driver:
+          type: object
+          properties:
+            driverId:      { type: string }
+            name:          { type: string }
+            vehicleNumber: { type: string }
+        startedAt:  { type: string, format: date-time }
+        updatedAt:  { type: string, format: date-time }
+
+    StartTripResponse:
+      type: object
+      properties:
+        tripId:          { type: string }
+        status:          { type: string, example: "IN_PROGRESS" }
+        startedAt:       { type: string, format: date-time }
+        surgeMultiplier: { type: number }
+
+    ArriveResponse:
+      type: object
+      properties:
+        tripId:    { type: string }
+        status:    { type: string, example: "MATCHED" }
+        arrivedAt: { type: string, format: date-time }
+
+    PauseTripRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          enum: [TRAFFIC, BREAKDOWN, REQUESTED_BY_RIDER, OTHER]
+
+    PauseTripResponse:
+      type: object
+      properties:
+        tripId:   { type: string }
+        status:   { type: string, example: "PAUSED" }
+        pausedAt: { type: string, format: date-time }
+
+    ResumeTripResponse:
+      type: object
+      properties:
+        tripId:    { type: string }
+        status:    { type: string, example: "IN_PROGRESS" }
+        resumedAt: { type: string, format: date-time }
+
+    EndTripRequest:
+      type: object
+      required: [distanceKm]
+      properties:
+        distanceKm: { type: number, format: double, example: 8.4 }
+
+    EndTripResponse:
+      type: object
+      properties:
+        tripId:   { type: string }
+        status:   { type: string, example: "COMPLETED" }
+        endedAt:  { type: string, format: date-time }
+        fare:
+          $ref: '#/components/schemas/FareBreakdown'
+
+    CancelTripRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          enum: [RIDER_REQUEST, DRIVER_REQUEST, SYSTEM]
+
+    CancelTripResponse:
+      type: object
+      properties:
+        tripId:          { type: string }
+        status:          { type: string, example: "CANCELLED" }
+        cancellationFee: { type: number }
+        currency:        { type: string, example: "INR" }
+
+    ReceiptResponse:
+      type: object
+      properties:
+        tripId:  { type: string }
+        rideId:  { type: string }
+        rider:
+          type: object
+          properties:
+            riderId: { type: string }
+            name:    { type: string }
+        driver:
+          type: object
+          properties:
+            driverId:      { type: string }
+            name:          { type: string }
+            vehicleNumber: { type: string }
+        pickup:   { $ref: '#/components/schemas/GeoPoint' }
+        dropoff:  { $ref: '#/components/schemas/GeoPoint' }
+        startedAt:   { type: string, format: date-time }
+        endedAt:     { type: string, format: date-time }
+        distanceKm:  { type: number }
+        fare:
+          $ref: '#/components/schemas/FareBreakdown'
+        payment:
+          type: object
+          properties:
+            paymentId:    { type: string }
+            status:       { type: string, enum: [PENDING, COMPLETED, FAILED, REFUNDED] }
+            method:       { type: string }
+            pspReference: { type: string }
+
+    # ── Driver ──────────────────────────────────────────────────────────────
+
+    LocationUpdateRequest:
+      type: object
+      required: [driverId, lat, lon, heading, accuracy, timestamp]
+      properties:
+        driverId:  { type: string }
+        lat:       { type: number, format: double }
+        lon:       { type: number, format: double }
+        heading:   { type: number, description: "Degrees 0–360" }
+        accuracy:  { type: number, description: "Metres" }
+        timestamp: { type: string, format: date-time }
+
+    DriverStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ONLINE, OFFLINE]
+
+    DriverStatusResponse:
+      type: object
+      properties:
+        driverId:  { type: string }
+        status:    { type: string }
+        updatedAt: { type: string, format: date-time }
+
+    AcceptOfferResponse:
+      type: object
+      properties:
+        offerId: { type: string }
+        rideId:  { type: string }
+        status:  { type: string, example: "ACCEPTED" }
+        pickup:
+          $ref: '#/components/schemas/GeoPoint'
+
+    DeclineOfferResponse:
+      type: object
+      properties:
+        offerId: { type: string }
+        status:  { type: string, example: "DECLINED" }
+
+    # ── Payment ─────────────────────────────────────────────────────────────
+
+    InitiatePaymentRequest:
+      type: object
+      required: [tripId, amount, currency, paymentMethod]
+      properties:
+        tripId:        { type: string }
+        amount:        { type: number }
+        currency:      { type: string, example: "INR" }
+        paymentMethod: { type: string, enum: [UPI, CARD, CASH, WALLET] }
+
+    InitiatePaymentResponse:
+      type: object
+      properties:
+        paymentId:  { type: string }
+        status:     { type: string, example: "PENDING" }
+        createdAt:  { type: string, format: date-time }
+
+    PaymentStatusResponse:
+      type: object
+      properties:
+        paymentId:    { type: string }
+        tripId:       { type: string }
+        status:       { type: string, enum: [PENDING, COMPLETED, FAILED, REFUNDED] }
+        amount:       { type: number }
+        currency:     { type: string }
+        pspReference: { type: string }
+        completedAt:  { type: string, format: date-time }
+
+    # ── Admin ────────────────────────────────────────────────────────────────
+
+    FeatureFlagRequest:
+      type: object
+      properties:
+        enabled:            { type: boolean }
+        rolloutPercentage:  { type: integer, minimum: 0, maximum: 100 }
+        description:        { type: string }
+
+    FeatureFlagResponse:
+      type: object
+      properties:
+        flagName:  { type: string }
+        enabled:   { type: boolean }
+        updatedAt: { type: string, format: date-time }
+
+    KillSwitchRequest:
+      type: object
+      properties:
+        action:          { type: string, enum: [DISABLE, ENABLE] }
+        reason:          { type: string }
+        durationMinutes: { type: integer }
+
+    KillSwitchResponse:
+      type: object
+      properties:
+        serviceName:    { type: string }
+        action:         { type: string }
+        effectiveUntil: { type: string, format: date-time }
+
+    ServiceHealthResponse:
+      type: object
+      properties:
+        serviceName: { type: string }
+        status:      { type: string, enum: [UP, DEGRADED, DOWN] }
+        region:      { type: string }
+        version:     { type: string }
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+        checkedAt: { type: string, format: date-time }
+
+# ────────────────────────────────────────────────────────────────────────────
+# Paths
+# ────────────────────────────────────────────────────────────────────────────
+paths:
+
+  # ── Rider ──────────────────────────────────────────────────────────────────
+
+  /rides:
+    post:
+      summary: Create ride request
+      tags: [Rider]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRideRequest'
+      responses:
+        '202':
+          description: Ride request accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateRideResponse'
+        '409':
+          description: Duplicate idempotency key — returns existing ride
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateRideResponse'
+
+  /rides/{rideId}:
+    get:
+      summary: Poll ride state
+      tags: [Rider]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: rideId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Current ride state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RideStatusResponse'
+        '404':
+          description: Ride not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      summary: Cancel ride (before driver matched)
+      tags: [Rider]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: rideId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Ride cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancelRideResponse'
+
+  # ── Driver ─────────────────────────────────────────────────────────────────
+
+  /drivers/location:
+    post:
+      summary: Send GPS location update
+      tags: [Driver]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LocationUpdateRequest'
+      responses:
+        '204':
+          description: Location accepted
+
+  /drivers/status:
+    put:
+      summary: Go online or offline
+      tags: [Driver]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DriverStatusRequest'
+      responses:
+        '200':
+          description: Status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverStatusResponse'
+
+  /drivers/offers/{offerId}/accept:
+    post:
+      summary: Accept a dispatch offer
+      tags: [Driver]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: offerId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Offer accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptOfferResponse'
+        '409':
+          description: Offer already expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /drivers/offers/{offerId}/decline:
+    post:
+      summary: Decline a dispatch offer
+      tags: [Driver]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: offerId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Offer declined
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeclineOfferResponse'
+
+  # ── Trip ───────────────────────────────────────────────────────────────────
+
+  /trips/{tripId}:
+    get:
+      summary: Poll trip state
+      tags: [Trip]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Current trip state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripStatusResponse'
+        '404':
+          description: Trip not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /trips/{tripId}/start:
+    post:
+      summary: Driver starts the trip (MATCHED → IN_PROGRESS)
+      tags: [Trip]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Trip started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartTripResponse'
+
+  /trips/{tripId}/arrive:
+    post:
+      summary: Driver signals arrival at pickup (no FSM state change)
+      tags: [Trip]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Arrival recorded; DRIVER_ARRIVED push sent to rider
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArriveResponse'
+
+  /trips/{tripId}/pause:
+    post:
+      summary: Pause trip (IN_PROGRESS → PAUSED)
+      tags: [Trip]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PauseTripRequest'
+      responses:
+        '200':
+          description: Trip paused
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PauseTripResponse'
+
+  /trips/{tripId}/resume:
+    post:
+      summary: Resume trip (PAUSED → IN_PROGRESS)
+      tags: [Trip]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Trip resumed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResumeTripResponse'
+
+  /trips/{tripId}/end:
+    post:
+      summary: End trip and calculate fare (IN_PROGRESS or PAUSED → COMPLETED)
+      tags: [Trip]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EndTripRequest'
+      responses:
+        '200':
+          description: Trip completed with fare breakdown
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EndTripResponse'
+
+  /trips/{tripId}/cancel:
+    post:
+      summary: Cancel trip
+      tags: [Trip]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelTripRequest'
+      responses:
+        '200':
+          description: Trip cancelled (cancellation fee charged if IN_PROGRESS or PAUSED)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancelTripResponse'
+
+  /trips/{tripId}/fare:
+    get:
+      summary: Get current fare estimate or final fare
+      tags: [Trip]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Fare breakdown
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FareBreakdown'
+
+  /trips/{tripId}/receipt:
+    get:
+      summary: Full itemised receipt (available once COMPLETED)
+      tags: [Trip]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Receipt with fare and payment details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceiptResponse'
+        '404':
+          description: Trip not found or not yet completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ── Payment ────────────────────────────────────────────────────────────────
+
+  /payments:
+    post:
+      summary: Initiate a payment
+      tags: [Payment]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InitiatePaymentRequest'
+      responses:
+        '202':
+          description: Payment accepted and queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InitiatePaymentResponse'
+
+  /payments/{paymentId}:
+    get:
+      summary: Get payment status
+      tags: [Payment]
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Payment details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentStatusResponse'
+
+  # ── Admin ──────────────────────────────────────────────────────────────────
+
+  /admin/feature-flags/{flagName}:
+    put:
+      summary: Update a feature flag
+      tags: [Admin]
+      parameters:
+        - name: flagName
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeatureFlagRequest'
+      responses:
+        '200':
+          description: Flag updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeatureFlagResponse'
+
+  /admin/kill-switch/{serviceName}:
+    post:
+      summary: Enable or disable a service via kill-switch
+      tags: [Admin]
+      parameters:
+        - name: serviceName
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KillSwitchRequest'
+      responses:
+        '200':
+          description: Kill-switch action applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KillSwitchResponse'
+
+  /admin/services/{serviceName}/health:
+    get:
+      summary: Live health check for a named service
+      tags: [Admin]
+      parameters:
+        - name: serviceName
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Service is UP or DEGRADED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceHealthResponse'
+        '503':
+          description: Service is DOWN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceHealthResponse'

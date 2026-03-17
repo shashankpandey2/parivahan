@@ -2,6 +2,8 @@
 
 Design Assignment (DAW) — Java implementation.
 
+**[View API Docs (Swagger UI)](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/shashankpandey2/parivahan/main/docs/openapi.yaml)**
+
 ---
 
 ## Problem Statement (verbatim summary)
@@ -92,7 +94,7 @@ Design a **multi-tenant, multi-region** ride-hailing system (Uber/Ola scale) tha
 
 ---
 
-### D3 — APIs & Events ✅ → [docs/apis.md](docs/apis.md)
+### D3 — APIs & Events ✅ → [docs/apis.md](docs/apis.md) · [Swagger UI](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/shashankpandey2/parivahan/main/docs/openapi.yaml)
 
 #### REST APIs
 - [x] Rider: create ride request (idempotency-key), poll state, cancel
